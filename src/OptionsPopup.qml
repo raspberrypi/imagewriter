@@ -34,6 +34,8 @@ Window {
     property string cloudinitrun
     property string cloudinitwrite
     property string cloudinitnetwork
+    property bool deviceUsbOtgSupport: false
+    property bool enableEtherGadget
 
     signal saveSettingsSignal(var settings)
 
@@ -359,6 +361,12 @@ Window {
                 // Remote access tab
 
                 ImCheckBox {
+                    id: chkUSBEther
+                    text: qsTr("Enable USB Ethernet Gadget")
+                    enabled: deviceUsbOtgSupport
+                }
+
+                ImCheckBox {
                     id: chkSSH
                     text: qsTr("Enable SSH")
                     onCheckedChanged: {
@@ -632,6 +640,14 @@ Window {
             }
         }
 
+        if (imageWriter.checkHWAndSWCapability("usb_otg")) {
+            deviceUsbOtgSupport = true
+        } else {
+            deviceUsbOtgSupport = false
+            // make sure it isn't disabled and selected
+            chkUSBEther.checked = false
+        }
+
         //open()
         show()
         raise()
@@ -829,6 +845,20 @@ Window {
 
             addCmdline("cfg80211.ieee80211_regdom="+fieldWifiCountry.editText)
         }
+        if (chkUSBEther.checked) {
+            // keep parity with cli.cpp
+            addConfig("dtoverlay=dwc2,dr_mode=peripheral")
+
+            enableEtherGadget = true;
+
+            addFirstRun("\nmv /boot/firmware/10usb.net /etc/systemd/network/10-usb.network")
+            addFirstRun("mv /boot/firmware/geth.cnf /etc/modprobe.d/g_ether.conf")
+            addFirstRun("mv /boot/firmware/gemod.cnf /etc/modules-load.d/usb-ether-gadget.conf\n")
+            addFirstRun("SERIAL=$(grep Serial /proc/cpuinfo | awk '{print $3}')")
+            addFirstRun("sed -i \"s/<serial>/$SERIAL/g\" /etc/modprobe.d/g_ether.conf")
+            addFirstRun("systemctl enable systemd-networkd\n")
+        }
+
         if (chkLocale.checked) {
             var kbdconfig = "XKBMODEL=\"pc105\"\n"
             kbdconfig += "XKBLAYOUT=\""+fieldKeyboardLayout.editText+"\"\n"
@@ -854,17 +884,6 @@ Window {
             addCloudInit("  layout: \"" + fieldKeyboardLayout.editText + "\"")
         }
 
-        if (firstrun.length) {
-            firstrun = "#!/bin/bash\n\n"+"set +e\n\n"+firstrun
-            addFirstRun("rm -f /boot/firstrun.sh")
-            addFirstRun("sed -i 's| systemd.run.*||g' /boot/cmdline.txt")
-            addFirstRun("exit 0")
-            /* using systemd.run_success_action=none does not seem to have desired effect
-               systemd then stays at "reached target kernel command line", so use reboot instead */
-            //addCmdline("systemd.run=/boot/firstrun.sh systemd.run_success_action=reboot systemd.unit=kernel-command-line.target")
-            // cmdline changing moved to DownloadThread::_customizeImage()
-        }
-
         if (cloudinitwrite !== "") {
             addCloudInit("write_files:\n"+cloudinitwrite+"\n")
         }
@@ -873,7 +892,7 @@ Window {
             addCloudInit("runcmd:\n"+cloudinitrun+"\n")
         }
 
-        imageWriter.setImageCustomization(config, cmdline, firstrun, cloudinit, cloudinitnetwork)
+        imageWriter.setImageCustomization(config, cmdline, firstrun, cloudinit, cloudinitnetwork, false, enableEtherGadget)
     }
 
     function saveSettings()
