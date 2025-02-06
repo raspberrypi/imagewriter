@@ -58,11 +58,14 @@ int Cli::run()
         {"first-run-script", "Add firstrun.sh to image", "first-run-script", ""},
         {"cloudinit-userdata", "Add cloud-init user-data file to image", "cloudinit-userdata", ""},
         {"cloudinit-networkconfig", "Add cloud-init network-config file to image", "cloudinit-networkconfig", ""},
+        {"usb-ether-gadget", "Enable USB Ethernet Gadget mode (does not support --first-run-script)"},
         {"disable-eject", "Disable automatic ejection of storage media after verification"},
         {"debug", "Output debug messages to console"},
         {"quiet", "Only write to console on error"},
     });
 
+    parser.addVersionOption();
+    parser.addHelpOption();
     parser.addPositionalArgument("src", "Image file/URL");
     parser.addPositionalArgument("dst", "Destination device");
     parser.process(*_app);
@@ -70,7 +73,7 @@ int Cli::run()
     const QStringList args = parser.positionalArguments();
     if (args.count() != 2)
     {
-        std::cerr << "Usage: --cli [--disable-verify] [--disable-eject] [--sha256 <expected hash> [--cache-file <cache file>]] [--first-run-script <script>] [--debug] [--quiet] <image file to write> <destination drive device>" << std::endl;
+        std::cerr << "Usage: --cli [--disable-verify] [--disable-eject] [--sha256 <expected hash> [--cache-file <cache file>]] [--first-run-script <script>] [--usb-ether-gadget] [--debug] [--quiet] <image file to write> <destination drive device>" << std::endl;
         return 1;
     }
 
@@ -148,6 +151,8 @@ int Cli::run()
         }
     }
 
+    bool isEtherGadgetEnabled = parser.isSet("usb-ether-gadget");
+
     if (!parser.value("cloudinit-userdata").isEmpty())
     {
         QByteArray userData, networkConfig;
@@ -186,10 +191,15 @@ int Cli::run()
             return 1;
         }
 
-        _imageWriter->setImageCustomization("", "", "", userData, networkConfig);
+        _imageWriter->setImageCustomization("", "", "", userData, networkConfig, false, isEtherGadgetEnabled);
     }
     else if (!parser.value("first-run-script").isEmpty())
     {
+        if (isEtherGadgetEnabled) {
+            std::cerr << "Error: the --usb-ether-gadget option is not supported when --first-run-script is used.";
+            return 1;
+        }
+
         QByteArray firstRunScript;
         QFile f(parser.value("first-run-script"));
         if (!f.exists())
@@ -208,11 +218,12 @@ int Cli::run()
             return 1;
         }
 
-        _imageWriter->setImageCustomization("", "", firstRunScript, "", "");
+        _imageWriter->setImageCustomization("", "", firstRunScript, "", "", true, isEtherGadgetEnabled);
     }
 
     _imageWriter->setDst(args[1]);
     _imageWriter->setVerifyEnabled(!parser.isSet("disable-verify"));
+    _imageWriter->setEtherGadgetEnabled(isEtherGadgetEnabled);
     _imageWriter->setSetting("eject", !parser.isSet("disable-eject"));
 
     /* Run startWrite() in event loop (otherwise calling _app->exit() on error does not work) */

@@ -855,6 +855,10 @@ void DownloadThread::setVerifyEnabled(bool verify)
     _verifyEnabled = verify;
 }
 
+void DownloadThread::setEtherGadgetEnabled(bool etherGadget) {
+    _enableEtherGadget = etherGadget;
+}
+
 bool DownloadThread::isImage()
 {
     return true;
@@ -885,7 +889,7 @@ qint64 DownloadThread::_sectorsWritten()
     return -1;
 }
 
-void DownloadThread::setImageCustomization(const QByteArray &config, const QByteArray &cmdline, const QByteArray &firstrun, const QByteArray &cloudinit, const QByteArray &cloudInitNetwork, const QByteArray &initFormat)
+void DownloadThread::setImageCustomization(const QByteArray &config, const QByteArray &cmdline, const QByteArray &firstrun, const QByteArray &cloudinit, const QByteArray &cloudInitNetwork, const QByteArray &initFormat, const bool userDefinedFirstRun, const bool enableEtherGadget)
 {
     _config = config;
     _cmdline = cmdline;
@@ -893,6 +897,8 @@ void DownloadThread::setImageCustomization(const QByteArray &config, const QByte
     _cloudinit = cloudinit;
     _cloudinitNetwork = cloudInitNetwork;
     _initFormat = initFormat;
+    _userDefinedFirstRun = userDefinedFirstRun;
+    _enableEtherGadget = enableEtherGadget;
 }
 
 bool DownloadThread::_customizeImage()
@@ -968,10 +974,55 @@ bool DownloadThread::_customizeImage()
             }
         }
 
-        if (!_firstrun.isEmpty() && _initFormat == "systemd")
+        if (_enableEtherGadget) {
+            // load files from disk and write
+            QByteArray networkConfig = _fileGetContentsTrimmed("://extraFiles/10-usb.network");
+            fat->writeFile("10usb.net", networkConfig);
+            // little optimization for memory constrained systems
+            networkConfig.clear();
+
+            // only needed for manual config without g_ether
+            QByteArray modprobeConf = _fileGetContentsTrimmed("://extraFiles/g_ether.conf");
+            fat->writeFile("geth.cnf", modprobeConf);
+            // little optimization for memory constrained systems
+            modprobeConf.clear();
+
+            QByteArray modulesConf = _fileGetContentsTrimmed("://extraFiles/usb-ether-gadget.conf");
+            fat->writeFile("gemod.cnf", modulesConf);
+            // little optimization for memory constrained systems
+            modulesConf.clear();
+
+            QByteArray controllScript = _fileGetContentsTrimmed("://extraFiles/rpi-usb-ether-gadget.sh");
+            fat->writeFile("uethc.sh", controllScript);
+            controllScript.clear();
+
+            // add config.txt change - \n prefix to also work if user defined config doesn't end with a LF
+            _config.append("\ndtoverlay=dwc2,dr_mode=peripheral\n");
+            _firstrun.append("\nmv /boot/firmware/10usb.net /etc/systemd/network/10-usb.network\n");
+            _firstrun.append("mv /boot/firmware/geth.cnf /etc/modprobe.d/g_ether.conf\n");
+            _firstrun.append("mv /boot/firmware/gemod.cnf /etc/modules-load.d/usb-ether-gadget.conf\n");
+            _firstrun.append("mv /boot/firmware/uethc.sh /usr/bin/rpi-usb-ether-gadget\n");
+            _firstrun.append("chmod +x /usr/bin/rpi-usb-ether-gadget\n\n");
+            _firstrun.append("SERIAL=$(grep Serial /proc/cpuinfo | awk '{print $3}')\n");
+            _firstrun.append("sed -i \"s/<serial>/$SERIAL/g\" /etc/modprobe.d/g_ether.conf\n");
+            _firstrun.append("systemctl enable systemd-networkd\n\n");
+        }
+
+        if (!_firstrun.isEmpty())
         {
-            fat->writeFile("firstrun.sh", _firstrun);
-            _cmdline += " systemd.run=/boot/firstrun.sh systemd.run_success_action=reboot systemd.unit=kernel-command-line.target";
+            if (!_userDefinedFirstRun) {
+                _firstrun = "#!/bin/bash\n\n" + QByteArray("set +e\n\n") + _firstrun;
+
+                // Add file cleanup and exit commands
+                _firstrun.append("\nrm -f /boot/firstrun.sh\n");
+                _firstrun.append("sed -i 's| systemd.run.*||g' /boot/cmdline.txt\n");
+                _firstrun.append("exit 0\n");
+            }
+
+            if (_initFormat == "systemd") {
+                fat->writeFile("firstrun.sh", _firstrun);
+                _cmdline += " systemd.run=/boot/firstrun.sh systemd.run_success_action=reboot systemd.unit=kernel-command-line.target";
+            }
         }
 
         if (!_cloudinit.isEmpty() && _initFormat == "cloudinit")

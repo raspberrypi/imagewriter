@@ -329,7 +329,7 @@ void ImageWriter::startWrite()
     connect(_thread, SIGNAL(preparationStatusUpdate(QString)), SLOT(onPreparationStatusUpdate(QString)));
     _thread->setVerifyEnabled(_verifyEnabled);
     _thread->setUserAgent(QString("Mozilla/5.0 rpi-imager/%1").arg(constantVersion()).toUtf8());
-    _thread->setImageCustomization(_config, _cmdline, _firstrun, _cloudinit, _cloudinitNetwork, _initFormat);
+    _thread->setImageCustomization(_config, _cmdline, _firstrun, _cloudinit, _cloudinitNetwork, _initFormat, _userDefinedFirstRun, _enableEtherGadget);
 
     if (!_expectedHash.isEmpty() && _cachedFileHash != _expectedHash && _cachingEnabled)
     {
@@ -514,6 +514,37 @@ void ImageWriter::setHWFilterList(const QByteArray &json, const bool &inclusive)
     QJsonDocument json_document = QJsonDocument::fromJson(json);
     _deviceFilter = json_document.array();
     _deviceFilterIsInclusive = inclusive;
+}
+
+void ImageWriter::setHWCapabilitiesList(const QByteArray &json) {
+    QJsonDocument json_document = QJsonDocument::fromJson(json);
+    // TODO: maybe also clear the sw capabilities as in the UI the OS is unselected when this changes
+    _hwCapabilities = json_document.array();
+}
+
+void ImageWriter::setSWCapabilitiesList(const QByteArray &json) {
+    QJsonDocument json_document = QJsonDocument::fromJson(json);
+    _swCapabilities = json_document.array();
+}
+
+QJsonArray ImageWriter::getHWFilterList() {
+    return _deviceFilter;
+}
+
+bool ImageWriter::getHWFilterListInclusive() {
+    return _deviceFilterIsInclusive;
+}
+
+bool ImageWriter::checkHWAndSWCapability(const QString &cap, const QString &differentSWCap) {
+    return this->checkHWCapability(cap) && this->checkSWCapability(differentSWCap.isEmpty() ? cap : differentSWCap);
+}
+
+bool ImageWriter::checkHWCapability(const QString &cap) {
+    return _hwCapabilities.contains(cap.toLower());
+}
+
+bool ImageWriter::checkSWCapability(const QString &cap) {
+    return _swCapabilities.contains(cap.toLower());
 }
 
 void ImageWriter::handleNetworkRequestFinished(QNetworkReply *data) {
@@ -743,6 +774,12 @@ void ImageWriter::setVerifyEnabled(bool verify)
     _verifyEnabled = verify;
     if (_thread)
         _thread->setVerifyEnabled(verify);
+}
+
+void ImageWriter::setEtherGadgetEnabled(bool etherGadget) {
+    _enableEtherGadget = etherGadget;
+    if (_thread)
+        _thread->setEtherGadgetEnabled(etherGadget);
 }
 
 /* Relay events from download thread to QML */
@@ -1217,18 +1254,22 @@ void ImageWriter::setSetting(const QString &key, const QVariant &value)
     _settings.sync();
 }
 
-void ImageWriter::setImageCustomization(const QByteArray &config, const QByteArray &cmdline, const QByteArray &firstrun, const QByteArray &cloudinit, const QByteArray &cloudinitNetwork)
+void ImageWriter::setImageCustomization(const QByteArray &config, const QByteArray &cmdline, const QByteArray &firstrun, const QByteArray &cloudinit, const QByteArray &cloudinitNetwork, const bool userDefinedFirstRun, const bool enableEtherGadget)
 {
     _config = config;
     _cmdline = cmdline;
     _firstrun = firstrun;
     _cloudinit = cloudinit;
     _cloudinitNetwork = cloudinitNetwork;
+    _userDefinedFirstRun = userDefinedFirstRun;
+    _enableEtherGadget = enableEtherGadget;
 
     qDebug() << "Custom config.txt entries:" << config;
     qDebug() << "Custom cmdline.txt entries:" << cmdline;
     qDebug() << "Custom firstuse.sh:" << firstrun;
     qDebug() << "Cloudinit:" << cloudinit;
+    qDebug() << "Is user-defined firstRun.sh:" << userDefinedFirstRun;
+    qDebug() << "Enable USB Ethernet Gadget mode:" << enableEtherGadget;
 }
 
 QString ImageWriter::crypt(const QByteArray &password)

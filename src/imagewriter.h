@@ -42,6 +42,9 @@ public:
     /* Enable/disable verification */
     Q_INVOKABLE void setVerifyEnabled(bool verify);
 
+    /* Enable/disable USB Ethernet Gadget mode config */
+    Q_INVOKABLE void setEtherGadgetEnabled(bool etherGadget);
+
     /* Returns true if src and dst are set */
     Q_INVOKABLE bool readyToWrite();
 
@@ -87,6 +90,27 @@ public:
     /** Set the HW filter, for a filtered view of the OS list */
     Q_INVOKABLE void setHWFilterList(const QByteArray &json, const bool &inclusive);
 
+    /* Set the capabilities supported by the hardware, for a filtered view of options that require the hardware to have certain capabilities. */
+    Q_INVOKABLE void setHWCapabilitiesList(const QByteArray &json);
+
+    /* Set the capabilities supported by the hardware, for a filtered view of options that require the software to have certain capabilities. */
+    Q_INVOKABLE void setSWCapabilitiesList(const QByteArray &json);
+
+    /* Get the HW filter list */
+    Q_INVOKABLE QJsonArray getHWFilterList();
+
+    /* Get if the HW filter is in inclusive mode */
+    Q_INVOKABLE bool getHWFilterListInclusive();
+
+    /* Get if both hard and software support a certain feature. If no differentSWCap is provided it will check for cap support in SW and HW lists. */
+    Q_INVOKABLE bool checkHWAndSWCapability(const QString &cap, const QString &differentSWCap = "");
+
+    /* Check if the hardware supports a certain feature. */
+    Q_INVOKABLE bool checkHWCapability(const QString &cap);
+
+    /* Check if the software supports a certain feature. */
+    Q_INVOKABLE bool checkSWCapability(const QString &cap);
+
     /* Set custom cache file */
     void setCustomCacheFile(const QString &cacheFile, const QByteArray &sha256);
 
@@ -123,7 +147,7 @@ public:
 
     Q_INVOKABLE bool getBoolSetting(const QString &key);
     Q_INVOKABLE void setSetting(const QString &key, const QVariant &value);
-    Q_INVOKABLE void setImageCustomization(const QByteArray &config, const QByteArray &cmdline, const QByteArray &firstrun, const QByteArray &cloudinit, const QByteArray &cloudinitNetwork);
+    Q_INVOKABLE void setImageCustomization(const QByteArray &config, const QByteArray &cmdline, const QByteArray &firstrun, const QByteArray &cloudinit, const QByteArray &cloudinitNetwork, const bool userDefinedFirstRun, const bool enableEtherGadget);
     Q_INVOKABLE void setSavedCustomizationSettings(const QVariantMap &map);
     Q_INVOKABLE QVariantMap getSavedCustomizationSettings();
     Q_INVOKABLE void clearSavedCustomizationSettings();
@@ -184,13 +208,14 @@ private:
     void fillSubLists(QJsonArray &topLevel);
     QNetworkAccessManager _networkManager;
     QJsonDocument _completeOsList;
-    QJsonArray _deviceFilter;
+    QJsonArray _deviceFilter, _hwCapabilities, _swCapabilities;
     bool _deviceFilterIsInclusive;
 
 protected:
     QUrl _src, _repo;
     QString _dst, _cacheFileName, _parentCategory, _osName, _currentLang, _currentLangcode, _currentKeyboard;
     QByteArray _expectedHash, _cachedFileHash, _cmdline, _config, _firstrun, _cloudinit, _cloudinitNetwork, _initFormat;
+    bool _userDefinedFirstRun, _enableEtherGadget;
     quint64 _downloadLen, _extrLen, _devLen, _dlnow, _verifynow;
     DriveListModel _drivelist;
     QQmlApplicationEngine *_engine;
